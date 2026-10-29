@@ -285,3 +285,9 @@ python sim\esp32_sim.py --modo todo --nuevo
 - Informar a padres y docentes sobre el tratamiento de datos.
 - Permitir eliminar sesiones desde el panel interno (`reset-demo` en demo).
 - No registrar tokens ni URLs sensibles en logs.
+
+## Licencia
+
+Este proyecto se distribuye bajo la **PolyForm Noncommercial License 1.0.0**.
+Permite uso personal, educativo e investigación; prohíbe el uso comercial.
+Ver [LICENSE](LICENSE).
