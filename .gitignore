@@ -1,0 +1,10 @@
+.env
+server/target/
+server/data/
+web/node_modules/
+web/dist/
+sim/out/
+sim/**/__pycache__/
+*.log
+.idea/
+.vscode/

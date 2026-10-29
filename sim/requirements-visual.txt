@@ -1,0 +1,4 @@
+pygame>=2.5
+pyaudio>=0.2.14
+numpy>=1.26
+pywin32>=306
