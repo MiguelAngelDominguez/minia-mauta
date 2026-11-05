@@ -243,6 +243,7 @@ Regla pedagógica:
 | `codigoError` | Causa | Acción del firmware |
 |---|---|---|
 | `IA_NO_DISPONIBLE` | Gemini no respondió o devolvió error. | Reproducir audio y reintentar el turno. |
+| `RESULTADO_DESCONOCIDO` | Respuesta inesperada del motor. | Reproducir audio y reintentar el turno. |
 | `RESULTADO_DESCONOCIDO` | Respuesta inesperada del motor. | Reintentar. |
 
 También son recuperables, pero devuelven HTTP 400 con JSON porque el audio no
@@ -285,7 +286,11 @@ Formato JSON de error:
 - Si se repite el mismo `X-Turno`, devuelve exactamente el mismo frame sin
   volver a llamar a Gemini.
 - Si no se envía `X-Turno`, el servidor genera uno nuevo y no puede deduplicar.
-- Ante timeout de red, reintentar con el mismo `X-Turno` y el mismo audio.
+- Ante timeout de red, reintentar con el mismo `X-Turno` y el mismo audio. Un
+  firmware que transmite el micrófono en streaming (como `firmware/minia_mauta`)
+  no conserva el audio: en ese caso, tras un fallo de red debe resincronizarse con
+  `GET .../audio-actual` (el turno pudo haberse procesado) y volver a grabar con
+  un `X-Turno` nuevo.
 - Ante HTTP 200 con `estado=ERROR`, reintentar con un `X-Turno` nuevo.
 
 ## 10. Notas para el firmware

@@ -9,6 +9,7 @@ El proyecto incluye:
 - **Servidor Spring Boot** que orquesta la sesión, evalúa con Gemini, sintetiza
   voz y guarda el historial en PostgreSQL.
 - **Contrato binario HTTP** para el ESP32: audio PCM16LE de 16 kHz mono.
+- **Firmware ESP32** (Arduino IDE) con INMP441 + MAX98357A en `firmware/`.
 - **Simulador de ESP32** en Python para probar el contrato sin hardware.
 - **Consola web React** para que el equipo docente vea sesiones, métricas y
   detalles.
@@ -225,6 +226,8 @@ proyecto_dev/
 │       └── resources/
 │           ├── application.yml
 │           └── db/migration/   Flyway: esquema y seed
+├── firmware/
+│   └── minia_mauta/            Firmware ESP32 (Arduino IDE), ver firmware/README.md
 ├── sim/
 │   └── esp32_sim.py            Simulador del dispositivo
 ├── web/

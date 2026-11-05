@@ -80,7 +80,7 @@ public class DeviceController {
         contrato.put("estados", List.of(EstadoSesion.values()));
         contrato.put("resultados", List.of(Resultado.values()));
         contrato.put("erroresRecuperables", List.of(
-                "AUDIO_VACIO", "AUDIO_INVALIDO", "AUDIO_MUY_CORTO", "AUDIO_DEMASIADO_LARGO", "IA_NO_DISPONIBLE"
+                "AUDIO_VACIO", "AUDIO_INVALIDO", "AUDIO_MUY_CORTO", "AUDIO_DEMASIADO_LARGO", "IA_NO_DISPONIBLE", "RESULTADO_DESCONOCIDO"
         ));
         contrato.put("notas", List.of(
                 "Los errores recuperables durante un turno devuelven HTTP 200, estado ERROR y audio para reintentar.",

@@ -4,6 +4,7 @@ server/data/
 web/node_modules/
 web/dist/
 sim/out/
+firmware/**/secrets.h
 sim/**/__pycache__/
 *.log
 .idea/
