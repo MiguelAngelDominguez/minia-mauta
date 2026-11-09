@@ -9,3 +9,4 @@ sim/**/__pycache__/
 *.log
 .idea/
 .vscode/
+.venv-sim/
