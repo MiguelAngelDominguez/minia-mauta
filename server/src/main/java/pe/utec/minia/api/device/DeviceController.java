@@ -63,8 +63,7 @@ public class DeviceController {
                 "X-Estado", "X-Resultado", "X-Sesion-Id", "X-Turno"
         ));
         contrato.put("headersSolicitud", List.of(
-                "X-Device-Token", "X-Device-Id", "X-Turno",
-                "X-Mock-Resultado (solo mock)", "X-Mock-Transcripcion (solo mock)"
+                "X-Device-Token", "X-Device-Id", "X-Turno"
         ));
         contrato.put("endpoints", List.of(
                 Map.of("metodo", "GET", "ruta", "/api/v1/device/contrato", "descripcion", "Este documento"),
@@ -85,8 +84,7 @@ public class DeviceController {
         contrato.put("notas", List.of(
                 "Los errores recuperables durante un turno devuelven HTTP 200, estado ERROR y audio para reintentar.",
                 "Los errores de autenticación o de sesión devuelven un JSON con codigo y mensaje.",
-                "Usa X-Turno como UUID idempotente; el servidor recuerda la respuesta por 10 minutos.",
-                "En modo mock, X-Mock-Resultado permite forzar CORRECTO, INCORRECTO, SIN_CONFIANZA o ERROR."
+                "Usa X-Turno como UUID idempotente; el servidor recuerda la respuesta por 10 minutos."
         ));
         return contrato;
     }
@@ -114,8 +112,6 @@ public class DeviceController {
             @RequestHeader(value = "X-Device-Token", required = false) String token,
             @RequestHeader(value = "X-Device-Id", required = false) String deviceHeader,
             @RequestHeader(value = "X-Turno", required = false) String turnHeader,
-            @RequestHeader(value = "X-Mock-Resultado", required = false) String mockResultado,
-            @RequestHeader(value = "X-Mock-Transcripcion", required = false) String mockTranscripcion,
             @PathVariable UUID id,
             @RequestBody(required = false) byte[] audio
     ) {
@@ -126,7 +122,7 @@ public class DeviceController {
             turnId = UUID.randomUUID();
         }
         TurnoResult result = sessionService.responder(
-                id, deviceId, turnId, audio, mockResultado, mockTranscripcion);
+                id, deviceId, turnId, audio);
         return frame(result, turnId);
     }
 

@@ -56,13 +56,14 @@ PostgreSQL queda en el puerto **5433** del host (el 5432 suele estar ocupado).
 Las migraciones Flyway crean el esquema y cargan el texto “El zorro y el cuervo”
 con 10 preguntas.
 
-### 2. Servidor en modo mock
+### 2. Servidor
 
-El modo mock no necesita API key y es determinista: ideal para demos y pruebas.
+El servidor usa Gemini para evaluación y voz. Requiere `GEMINI_API_KEYS`.
 
 ```powershell
 cd server
 $env:JAVA_HOME="C:\Users\ACER\.jdks\ms-21.0.12"
+$env:GEMINI_API_KEYS="tu-api-key"
 mvn spring-boot:run
 ```
 
@@ -101,7 +102,7 @@ python sim\esp32_sim.py --modo demo --real   # sin cabeceras X-Mock-*
 > `SIN_CONFIANZA`; para probar respuestas correctas usar el micrófono del ESP32
 > o un WAV con voz.
 
-### 4. Consola web
+### 4. Consola web (docente)
 
 ```powershell
 cd web
@@ -111,6 +112,26 @@ npm run dev
 
 Abrir `http://localhost:5173`. Vite redirige `/api` al servidor en el puerto
 8080.
+
+### 5. Dashboard de pruebas del backend
+
+Dashboard separado para validar **todo** el backend (contrato binario del
+dispositivo + endpoints de consola) y ver lo que retorna (status, headers,
+JSON, audio PCM, errores, latencias).
+
+```powershell
+cd web
+npm run dev
+```
+
+Abrir `http://localhost:5173/dashboard/`. El dashboard reutiliza el `node_modules`
+de `web/`. Incluye:
+
+- **Device Tester**: contrato, crear/reanudar sesión, enviar turno (mic del
+  navegador o archivo WAV/PCM), audio-actual, cerrar, idempotencia por `X-Turno`.
+- **Console Viewer**: panel, sesiones, detalle, textos, diagnóstico, reset-demo.
+- **Raw Inspector**: cualquier request con vista de headers/body/tiempo.
+- Grabador PCM16 16 kHz y reproductor/descargador de audio.
 
 ## Modo Gemini
 
@@ -128,11 +149,9 @@ Variables principales:
 
 | Variable | Default | Descripción |
 |---|---|---|
-| `MINIA_AI_MODE` | `mock` | `mock` o `gemini`. |
-| `MINIA_TTS_MODE` | `mock` | `mock` o `gemini`. |
-| `GEMINI_API_KEY` | vacío | Obligatoria en modo Gemini. |
+| `GEMINI_API_KEYS` | vacío | Obligatoria (lista separada por comas). |
 | `GEMINI_MODEL` | `gemini-3.5-flash` | Modelo de evaluación. |
-| `GEMINI_TTS_MODEL` | `gemini-2.5-flash-preview-tts` | Modelo de voz. |
+| `GEMINI_TTS_MODELS` | `gemini-3.8-flash-lite-tts` | Modelos de voz (rotación). |
 | `GEMINI_TTS_VOICE` | `Kore` | Voz de Gemini TTS. |
 | `DEVICE_TOKEN` | `dev-token` | Token compartido con el ESP32. |
 | `DB_URL` | `jdbc:postgresql://localhost:5433/minia` | PostgreSQL. |
@@ -156,8 +175,8 @@ Modelos verificados con una cuenta free:
 
 - `gemini-3.5-flash`: evaluación con audio, funciona.
 - `gemini-2.5-flash`: ya no está disponible para cuentas nuevas (`404`).
+- `gemini-3.8-flash-lite-tts`: genera voz más rápido (~3,6 s) y es el más económico; recomendado para TTS.
 - `gemini-2.5-flash-preview-tts`: genera voz, pero puede responder `429` por cuota.
-- `gemini-3.8-flash-tts`: también genera voz, con la misma limitación de cuota.
 
 > **Privacidad:** en el plan gratuito de Gemini no se deben enviar voces reales
 > de niños. Usar tonos sintéticos (el simulador ya lo hace) o una voz adulta con
@@ -232,7 +251,10 @@ proyecto_dev/
 │   └── esp32_sim.py            Simulador del dispositivo
 ├── web/
 │   ├── package.json
-│   └── src/                    Consola React
+│   ├── src/                    Consola React (docente)
+│   └── dashboard/              Dashboard de pruebas del backend
+│       ├── index.html
+│       └── src/
 └── docs/
     ├── api.md
     ├── contrato-esp32.md
@@ -276,6 +298,7 @@ python sim\esp32_sim.py --modo todo --nuevo
 - [x] Persistencia PostgreSQL con Flyway.
 - [x] Simulador de ESP32 y pruebas de contrato.
 - [x] Consola React de sesiones y métricas.
+- [x] Dashboard de pruebas del backend (contrato + consola).
 - [ ] WebSocket (v2).
 - [ ] Autenticación de la consola.
 - [ ] Editor de textos/preguntas desde la consola.

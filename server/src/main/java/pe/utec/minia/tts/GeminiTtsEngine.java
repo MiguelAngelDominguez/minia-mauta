@@ -30,7 +30,7 @@ public class GeminiTtsEngine implements TtsEngine {
 
     @Override
     public byte[] sintetizar(String texto) {
-        String apiKey = properties.ai().gemini().apiKey();
+        String apiKey = properties.ai().gemini().apiKeys().isEmpty() ? null : properties.ai().gemini().apiKeys().get(0);
         if (apiKey == null || apiKey.isBlank()) {
             throw ApiException.serviceUnavailable("GEMINI_SIN_API_KEY",
                     "Falta configurar GEMINI_API_KEY en el servidor.");
@@ -38,10 +38,17 @@ public class GeminiTtsEngine implements TtsEngine {
 
         try {
             ObjectNode body = mapper.createObjectNode();
+            ObjectNode systemInstruction = mapper.createObjectNode();
+            ArrayNode systemParts = systemInstruction.putArray("parts");
+            systemParts.addObject().put("text",
+                    "Eres una voz amable, clara y pausada que lee en español. " +
+                            "Lee únicamente el texto que se te proporcione, sin añadir instrucciones ni comentarios.");
+            body.set("systemInstruction", systemInstruction);
+
             ArrayNode contents = body.putArray("contents");
             ObjectNode content = contents.addObject();
             ArrayNode parts = content.putArray("parts");
-            parts.addObject().put("text", "Di con voz amable, clara y pausada, en español: " + texto);
+            parts.addObject().put("text", "\"" + texto + "\"");
 
             ObjectNode generationConfig = body.putObject("generationConfig");
             generationConfig.putArray("responseModalities").add("AUDIO");
@@ -51,7 +58,7 @@ public class GeminiTtsEngine implements TtsEngine {
                     .put("voiceName", properties.tts().gemini().voice());
 
             String url = "https://generativelanguage.googleapis.com/v1beta/models/"
-                    + properties.tts().gemini().model() + ":generateContent";
+                    + getTtsModel() + ":generateContent";
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(properties.tts().gemini().timeoutSeconds()))
@@ -98,8 +105,13 @@ public class GeminiTtsEngine implements TtsEngine {
         throw ApiException.serviceUnavailable("GEMINI_TTS_SIN_AUDIO", "Gemini TTS no devolvió audio.");
     }
 
+    private String getTtsModel() {
+        java.util.List<String> models = properties.tts().gemini().models();
+        return (models == null || models.isEmpty()) ? "gemini-2.5-flash-preview-tts" : models.get(0);
+    }
+
     @Override
     public String nombre() {
-        return "gemini-tts:" + properties.tts().gemini().model() + ":" + properties.tts().gemini().voice();
+        return "gemini-tts:" + getTtsModel() + ":" + properties.tts().gemini().voice();
     }
 }

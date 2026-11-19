@@ -32,7 +32,7 @@ public class GeminiAiEngine implements AiEngine {
 
     @Override
     public Evaluacion evaluar(EvaluacionRequest request) {
-        String apiKey = properties.ai().gemini().apiKey();
+        String apiKey = properties.ai().gemini().apiKeys().isEmpty() ? null : properties.ai().gemini().apiKeys().get(0);
         if (apiKey == null || apiKey.isBlank()) {
             throw ApiException.serviceUnavailable("GEMINI_SIN_API_KEY",
                     "Falta configurar GEMINI_API_KEY en el servidor.");

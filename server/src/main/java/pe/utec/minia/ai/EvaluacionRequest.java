@@ -11,8 +11,6 @@ public record EvaluacionRequest(
         List<String> palabrasClave,
         int lineaPista,
         int intento,
-        int secuencia,
-        String mockResultado,
-        String mockTranscripcion
+        int secuencia
 ) {
 }

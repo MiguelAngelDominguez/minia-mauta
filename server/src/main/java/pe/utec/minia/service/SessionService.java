@@ -22,10 +22,14 @@ import pe.utec.minia.repository.SesionRepository;
 import pe.utec.minia.repository.TurnoRepository;
 import pe.utec.minia.tts.TtsEngine;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class SessionService {
@@ -88,14 +92,23 @@ public class SessionService {
         sesion.setIniciadaEn(Instant.now());
         sesionRepository.save(sesion);
 
+        // Generar y guardar el audio del texto de lectura para reproducción en la consola.
+        try {
+            byte[] audioTexto = ttsEngine.sintetizar(texto.getCuerpo());
+            Path dir = Path.of(System.getProperty("minia.cache.dir", "data/audio-cache"));
+            Files.createDirectories(dir);
+            Path file = dir.resolve("sesion-" + sesion.getId() + "-texto.pcm");
+            Files.write(file, audioTexto);
+            sesion.setAudioTextoRuta(file.toString());
+            sesionRepository.save(sesion);
+        } catch (Exception exception) {
+            log.warn("No se pudo generar el audio del texto para la sesion {}: {}", sesion.getId(), exception.getMessage());
+        }
+
         Pregunta pregunta = contentService.pregunta(preguntas.getFirst());
         String saludo = "Hola" + (alias == null || alias.isBlank() ? "" : ", " + alias)
                 + ". Vamos a leer y responder preguntas sobre " + texto.getTitulo() + ".";
-        byte[] audio = audioService.concat(
-                ttsEngine.sintetizar(saludo),
-                audioService.silenceMs(properties.audio().silenceMs()),
-                ttsEngine.sintetizar(pregunta.getEnunciado())
-        );
+        byte[] audio = sintetizarParalelo(saludo, pregunta.getEnunciado(), properties.audio().silenceMs());
         TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, saludo, false, null, null);
         return new TurnoResult(meta, audio);
     }
@@ -103,11 +116,7 @@ public class SessionService {
     private TurnoResult reanudar(Sesion sesion) {
         Pregunta pregunta = preguntaActual(sesion);
         String mensaje = "Continuamos con la actividad.";
-        byte[] audio = audioService.concat(
-                ttsEngine.sintetizar(mensaje),
-                audioService.silenceMs(properties.audio().silenceMs()),
-                ttsEngine.sintetizar(pregunta.getEnunciado())
-        );
+        byte[] audio = sintetizarParalelo(mensaje, pregunta.getEnunciado(), properties.audio().silenceMs());
         TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, mensaje, false, null, null);
         return new TurnoResult(meta, audio);
     }
@@ -117,9 +126,7 @@ public class SessionService {
             UUID sesionId,
             String deviceId,
             UUID turnId,
-            byte[] audioPcm,
-            String mockResultado,
-            String mockTranscripcion
+            byte[] audioPcm
     ) {
         if (turnId == null) {
             turnId = UUID.randomUUID();
@@ -146,7 +153,7 @@ public class SessionService {
         int secuencia = sesion.getTurnoActual() + 1;
 
         long started = System.nanoTime();
-        Evaluacion evaluacion = evaluar(audioPcm, texto, pregunta, intento, secuencia, mockResultado, mockTranscripcion);
+        Evaluacion evaluacion = evaluar(audioPcm, texto, pregunta, intento, secuencia);
         if (evaluacion.resultado() == null) {
             evaluacion = new Evaluacion(Resultado.ERROR, evaluacion.confianza(), evaluacion.transcripcion(),
                     evaluacion.pista(), evaluacion.feedback());
@@ -171,6 +178,7 @@ public class SessionService {
         turno.setFeedback(respuesta.feedback());
         turno.setLatenciaMs(latency);
         turno.setAudioMs(audioService.durationMs(respuesta.audio()));
+        turno.setAudioRuta(guardarAudio(turno.getId(), respuesta.audio()));
         turno.setCreadoEn(Instant.now());
         turnoRepository.save(turno);
 
@@ -196,9 +204,7 @@ public class SessionService {
             Texto texto,
             Pregunta pregunta,
             int intento,
-            int secuencia,
-            String mockResultado,
-            String mockTranscripcion
+            int secuencia
     ) {
         try {
             return aiEngine.evaluar(new EvaluacionRequest(
@@ -210,9 +216,7 @@ public class SessionService {
                     pregunta.getPalabrasClave(),
                     pregunta.getLineaPista(),
                     intento,
-                    secuencia,
-                    mockResultado,
-                    mockTranscripcion
+                    secuencia
             ));
         } catch (RuntimeException exception) {
             log.warn("Fallo al evaluar con {}: {}", aiEngine.nombre(), exception.getMessage());
@@ -253,11 +257,7 @@ public class SessionService {
                     if (pista == null || pista.isBlank()) {
                         pista = "Busca la respuesta en la línea " + pregunta.getLineaPista() + " del texto.";
                     }
-                    audio = audioService.concat(
-                            ttsEngine.sintetizar(feedback),
-                            audioService.silenceMs(250),
-                            ttsEngine.sintetizar(pregunta.getEnunciado())
-                    );
+                    audio = sintetizarParalelo(feedback, pregunta.getEnunciado(), 250);
                     return new RespuestaTurno(audio, feedback, pista, false, null, null);
                 }
                 sesion.setErrores(sesion.getErrores() + 1);
@@ -268,21 +268,13 @@ public class SessionService {
             }
             case SIN_CONFIANZA -> {
                 sesion.setEstado(EstadoSesion.SIN_CONFIANZA);
-                audio = audioService.concat(
-                        ttsEngine.sintetizar(feedback),
-                        audioService.silenceMs(250),
-                        ttsEngine.sintetizar(pregunta.getEnunciado())
-                );
+                audio = sintetizarParalelo(feedback, pregunta.getEnunciado(), 250);
                 return new RespuestaTurno(audio, feedback, null, false, null, null);
             }
             case ERROR -> {
                 sesion.setEstado(EstadoSesion.ERROR);
                 codigoError = "IA_NO_DISPONIBLE";
-                audio = audioService.concat(
-                        ttsEngine.sintetizar(feedback),
-                        audioService.silenceMs(250),
-                        ttsEngine.sintetizar(pregunta.getEnunciado())
-                );
+                audio = sintetizarParalelo(feedback, pregunta.getEnunciado(), 250);
                 return new RespuestaTurno(audio, feedback, null, false, codigoError, null);
             }
             default -> {
@@ -299,22 +291,14 @@ public class SessionService {
         if (siguiente > sesion.getPreguntasIds().size()) {
             sesion.setEstado(EstadoSesion.FINALIZADA);
             sesion.setFinalizadaEn(Instant.now());
-            byte[] audio = audioService.concat(
-                    ttsEngine.sintetizar(feedback),
-                    audioService.silenceMs(250),
-                    ttsEngine.sintetizar("La actividad terminó. ¡Buen trabajo!")
-            );
+            byte[] audio = sintetizarParalelo(feedback, "La actividad terminó. ¡Buen trabajo!", 250);
             return new RespuestaTurno(audio, feedback, null, true, null, respuestaCorrecta);
         }
 
         sesion.setPreguntaActual(siguiente);
         sesion.setEstado(EstadoSesion.PREGUNTANDO);
         Pregunta siguientePregunta = contentService.pregunta(sesion.getPreguntasIds().get(siguiente - 1));
-        byte[] audio = audioService.concat(
-                ttsEngine.sintetizar(feedback),
-                audioService.silenceMs(properties.audio().silenceMs()),
-                ttsEngine.sintetizar(siguientePregunta.getEnunciado())
-        );
+        byte[] audio = sintetizarParalelo(feedback, siguientePregunta.getEnunciado(), properties.audio().silenceMs());
         return new RespuestaTurno(audio, feedback, null, false, null, respuestaCorrecta);
     }
 
@@ -356,6 +340,31 @@ public class SessionService {
         byte[] audio = ttsEngine.sintetizar(mensaje);
         TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, mensaje, false, null, null);
         return new TurnoResult(meta, audio);
+    }
+
+    private byte[] sintetizarParalelo(String textoA, String textoB, int silenceMs) {
+        CompletableFuture<byte[]> futureA = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoA));
+        CompletableFuture<byte[]> futureB = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoB));
+        byte[] audioA = futureA.join();
+        byte[] audioB = futureB.join();
+        return audioService.concat(audioA, audioService.silenceMs(silenceMs), audioB);
+    }
+
+    private String guardarAudio(UUID turnoId, byte[] audio) {
+        if (audio == null || audio.length == 0) {
+            return null;
+        }
+        String cacheDir = System.getProperty("minia.cache.dir", "data/audio-cache");
+        Path dir = Path.of(cacheDir);
+        Path file = dir.resolve("turno-" + turnoId + ".pcm");
+        try {
+            Files.createDirectories(dir);
+            Files.write(file, audio);
+            return file.toString();
+        } catch (IOException exception) {
+            log.warn("No se pudo guardar el audio del turno {}: {}", turnoId, exception.getMessage());
+            return null;
+        }
     }
 
     private Pregunta preguntaActual(Sesion sesion) {

@@ -2,6 +2,8 @@ package pe.utec.minia.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.List;
+
 @ConfigurationProperties(prefix = "minia")
 public record MiniaProperties(
         Ai ai,
@@ -10,14 +12,13 @@ public record MiniaProperties(
         Device device,
         Cors cors
 ) {
-
-    public record Ai(String mode, GeminiAi gemini) {
-        public record GeminiAi(String apiKey, String model, int timeoutSeconds) {
+    public record Ai(GeminiAi gemini) {
+        public record GeminiAi(List<String> apiKeys, String model, int timeoutSeconds) {
         }
     }
 
-    public record Tts(String mode, GeminiTts gemini) {
-        public record GeminiTts(String model, String voice, int timeoutSeconds) {
+    public record Tts(GeminiTts gemini) {
+        public record GeminiTts(List<String> models, String voice, int timeoutSeconds) {
         }
     }
 

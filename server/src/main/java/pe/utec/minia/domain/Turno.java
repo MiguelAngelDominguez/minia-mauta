@@ -47,5 +47,7 @@ public class Turno {
 
     private Long audioMs;
 
+    private String audioRuta;
+
     private Instant creadoEn;
 }

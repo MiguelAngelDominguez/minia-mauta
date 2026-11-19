@@ -1,5 +1,8 @@
 package pe.utec.minia.api.console;
 
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,6 +42,24 @@ public class ConsoleController {
     @GetMapping("/sesiones/{id}")
     public SesionDetalle detalle(@PathVariable UUID id) {
         return consoleService.detalle(id);
+    }
+
+    @GetMapping("/sesiones/{id}/audio-texto")
+    public ResponseEntity<byte[]> audioTextoSesion(@PathVariable UUID id) {
+        byte[] wav = consoleService.audioTextoSesion(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"texto-" + id + ".wav\"")
+                .contentType(MediaType.parseMediaType("audio/wav"))
+                .body(wav);
+    }
+
+    @GetMapping("/turnos/{id}/audio")
+    public ResponseEntity<byte[]> audioTurno(@PathVariable UUID id) {
+        byte[] wav = consoleService.audioTurno(id);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"turno-" + id + ".wav\"")
+                .contentType(MediaType.parseMediaType("audio/wav"))
+                .body(wav);
     }
 
     @GetMapping("/textos")

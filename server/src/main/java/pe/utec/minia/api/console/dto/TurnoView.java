@@ -7,6 +7,7 @@ public record TurnoView(
         int secuencia,
         int intento,
         String preguntaId,
+        String preguntaEnunciado,
         String resultado,
         Double confianza,
         String transcripcion,
@@ -14,6 +15,7 @@ public record TurnoView(
         String feedback,
         Long latenciaMs,
         Long audioMs,
+        String audioUrl,
         Instant creadoEn
 ) {
 }

@@ -54,6 +54,8 @@ public class Sesion {
 
     private Instant finalizadaEn;
 
+    private String audioTextoRuta;
+
     @Version
     private long version;
 }

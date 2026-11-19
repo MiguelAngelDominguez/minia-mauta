@@ -22,6 +22,9 @@ import pe.utec.minia.repository.SesionRepository;
 import pe.utec.minia.repository.TurnoRepository;
 import pe.utec.minia.tts.TtsEngine;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +37,7 @@ public class ConsoleService {
     private final ContentService contentService;
     private final AiEngine aiEngine;
     private final TtsEngine ttsEngine;
+    private final AudioService audioService;
     private final MiniaProperties properties;
 
     public ConsoleService(
@@ -42,6 +46,7 @@ public class ConsoleService {
             ContentService contentService,
             AiEngine aiEngine,
             TtsEngine ttsEngine,
+            AudioService audioService,
             MiniaProperties properties
     ) {
         this.sesionRepository = sesionRepository;
@@ -49,6 +54,7 @@ public class ConsoleService {
         this.contentService = contentService;
         this.aiEngine = aiEngine;
         this.ttsEngine = ttsEngine;
+        this.audioService = audioService;
         this.properties = properties;
     }
 
@@ -120,24 +126,70 @@ public class ConsoleService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public byte[] audioTurno(UUID turnoId) {
+        Turno turno = turnoRepository.findById(turnoId)
+                .orElseThrow(() -> ApiException.notFound("TURNO_NO_ENCONTRADO", "Turno no encontrado."));
+        if (turno.getAudioRuta() == null || turno.getAudioRuta().isBlank()) {
+            throw ApiException.notFound("AUDIO_NO_DISPONIBLE", "Este turno no tiene audio asociado.");
+        }
+        Path file = Path.of(turno.getAudioRuta());
+        if (!Files.exists(file)) {
+            throw ApiException.notFound("AUDIO_NO_DISPONIBLE", "El archivo de audio no existe en el servidor.");
+        }
+        try {
+            byte[] pcm = Files.readAllBytes(file);
+            return audioService.wav(pcm);
+        } catch (IOException exception) {
+            throw ApiException.serviceUnavailable("AUDIO_ERROR", "No se pudo leer el audio del turno.");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public byte[] audioTextoSesion(UUID sesionId) {
+        Sesion sesion = sesionRepository.findById(sesionId)
+                .orElseThrow(() -> ApiException.notFound("SESION_NO_ENCONTRADA", "Sesión no encontrada."));
+        if (sesion.getAudioTextoRuta() == null || sesion.getAudioTextoRuta().isBlank()) {
+            throw ApiException.notFound("AUDIO_NO_DISPONIBLE", "Esta sesión no tiene audio del texto.");
+        }
+        Path file = Path.of(sesion.getAudioTextoRuta());
+        if (!Files.exists(file)) {
+            throw ApiException.notFound("AUDIO_NO_DISPONIBLE", "El archivo de audio del texto no existe.");
+        }
+        try {
+            byte[] pcm = Files.readAllBytes(file);
+            return audioService.wav(pcm);
+        } catch (IOException exception) {
+            throw ApiException.serviceUnavailable("AUDIO_ERROR", "No se pudo leer el audio del texto.");
+        }
+    }
+
+    @Transactional
+    public Map<String, Object> resetDemo() {
+        List<UUID> turnoIds = turnoRepository.findAll().stream().map(Turno::getId).toList();
+        turnoRepository.deleteAllInBatch();
+        sesionRepository.deleteAllInBatch();
+        // Limpiar archivos de audio asociados a los turnos eliminados.
+        for (UUID id : turnoIds) {
+            try {
+                Files.deleteIfExists(Path.of("data/audio-cache", "turno-" + id + ".pcm"));
+            } catch (IOException ignored) {
+            }
+        }
+        return Map.of("ok", true, "mensaje", "Se eliminaron las sesiones y turnos. Los textos y preguntas se mantienen.");
+    }
+
     public DiagnosticoView diagnostico() {
         return new DiagnosticoView(
                 aiEngine.nombre(),
-                properties.ai().mode(),
+                "gemini",
                 ttsEngine.nombre(),
-                properties.tts().mode(),
+                "gemini",
                 properties.audio().rate(),
                 properties.audio().channels(),
                 properties.audio().maxSeconds(),
                 1
         );
-    }
-
-    @Transactional
-    public Map<String, Object> resetDemo() {
-        turnoRepository.deleteAllInBatch();
-        sesionRepository.deleteAllInBatch();
-        return Map.of("ok", true, "mensaje", "Se eliminaron las sesiones y turnos. Los textos y preguntas se mantienen.");
     }
 
     private SesionResumen resumen(Sesion sesion) {
@@ -184,11 +236,17 @@ public class ConsoleService {
     }
 
     private TurnoView turnoView(Turno turno) {
+        String preguntaEnunciado = null;
+        try {
+            preguntaEnunciado = contentService.pregunta(turno.getPreguntaId()).getEnunciado();
+        } catch (RuntimeException ignored) {
+        }
         return new TurnoView(
                 turno.getId().toString(),
                 turno.getSecuencia(),
                 turno.getIntento(),
                 turno.getPreguntaId().toString(),
+                preguntaEnunciado,
                 turno.getResultado().name(),
                 turno.getConfianza(),
                 turno.getTranscripcion(),
@@ -196,6 +254,7 @@ public class ConsoleService {
                 turno.getFeedback(),
                 turno.getLatenciaMs(),
                 turno.getAudioMs(),
+                turno.getAudioRuta() == null ? null : "/api/v1/console/turnos/" + turno.getId() + "/audio",
                 turno.getCreadoEn()
         );
     }

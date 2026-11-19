@@ -38,13 +38,11 @@ springdoc:
 
 minia:
   ai:
-    mode: ${MINIA_AI_MODE:mock}
     gemini:
       api-keys: ${GEMINI_API_KEYS:}
       model: ${GEMINI_MODEL:gemini-3.5-flash}
       timeout-seconds: 20
   tts:
-    mode: ${MINIA_TTS_MODE:mock}
     gemini:
       models: ${GEMINI_TTS_MODELS:gemini-3.8-flash-lite-tts}
       voice: ${GEMINI_TTS_VOICE:Kore}
