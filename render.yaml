@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: minia-backend
+    runtime: java
+    rootDir: server
+    buildCommand: mvn -q -DskipTests package
+    startCommand: java -jar target/minia-server-0.1.0.jar
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: JAVA_VERSION
+        value: "21"
+      - key: DEVICE_TOKEN
+        sync: false
+      - key: MINIA_AI_MODE
+        value: mock
+      - key: MINIA_TTS_MODE
+        value: mock
+      - key: CORS_ALLOWED_ORIGINS
+        value: ""
+
+databases:
+  - name: minia-db
+    databaseName: minia
+    user: minia

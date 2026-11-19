@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${PORT:${SERVER_PORT:8080}}
   address: 0.0.0.0
 
 spring:
@@ -40,13 +40,13 @@ minia:
   ai:
     mode: ${MINIA_AI_MODE:mock}
     gemini:
-      api-key: ${GEMINI_API_KEY:}
+      api-keys: ${GEMINI_API_KEYS:}
       model: ${GEMINI_MODEL:gemini-3.5-flash}
       timeout-seconds: 20
   tts:
     mode: ${MINIA_TTS_MODE:mock}
     gemini:
-      model: ${GEMINI_TTS_MODEL:gemini-2.5-flash-preview-tts}
+      models: ${GEMINI_TTS_MODELS:gemini-3.8-flash-lite-tts}
       voice: ${GEMINI_TTS_VOICE:Kore}
       timeout-seconds: 30
   audio:

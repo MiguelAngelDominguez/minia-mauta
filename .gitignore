@@ -1,12 +1,32 @@
-.env
+# Java / Maven
 server/target/
-server/data/
+*.class
+*.jar
+*.war
+
+# Node
 web/node_modules/
 web/dist/
+web/dashboard/node_modules/
+
+# Python
+sim/__pycache__/
+sim/minia_visual/__pycache__/
+*.pyc
 sim/out/
-firmware/**/secrets.h
-sim/**/__pycache__/
-*.log
+
+# Datos y caché
+server/data/
+*.pcm
+*.wav
+
+# Entorno
+.env
+firmware/minia_mauta/secrets.h
+
+# IDE / OS
 .idea/
 .vscode/
-.venv-sim/
+*.iml
+Thumbs.db
+.DS_Store
