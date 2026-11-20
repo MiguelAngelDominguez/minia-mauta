@@ -62,9 +62,9 @@ int intento = 1;
 bool sesionTerminada = false;
 String sesionId = "";
 
-// Buffer de captura (PSRAM si disponible)
-int16_t* bufferCaptura = nullptr;
-size_t capacidadCaptura = 0;   // muestras
+// Buffer de captura estático (32000 muestras = 2 s a 16 kHz = 64 KB)
+#define MAX_MUESTRAS_CAPTURA 32000
+int16_t bufferCaptura[MAX_MUESTRAS_CAPTURA];
 size_t muestrasCapturadas = 0;
 
 // =========================================================
@@ -289,15 +289,11 @@ bool capturarVoz() {
   Serial.println(">>> Capturando voz...");
   iniciarModoEscucha();
 
-  // Reservar buffer (PSRAM si disponible)
-  size_t maxMuestras = 10 * SAMPLE_RATE; // 10 s por defecto
+  // Buffer estático en RAM (MAX_MUESTRAS_CAPTURA). Sin malloc.
+  size_t maxMuestras = MAX_MUESTRAS_CAPTURA;
   if (psramFound()) {
-    maxMuestras = 30 * SAMPLE_RATE; // 30 s con PSRAM
-    if (!bufferCaptura) bufferCaptura = (int16_t*)ps_malloc(maxMuestras * sizeof(int16_t));
-  } else {
-    if (!bufferCaptura) bufferCaptura = (int16_t*)malloc(maxMuestras * sizeof(int16_t));
+    maxMuestras = min((size_t)(30 * SAMPLE_RATE), (size_t)MAX_MUESTRAS_CAPTURA);
   }
-  if (!bufferCaptura) { Serial.println("Sin memoria para captura"); return false; }
 
   muestrasCapturadas = 0;
   bool ninoEmpezoAHablar = false;
@@ -395,6 +391,7 @@ void loop() {
   bool locucionValida = capturarVoz();
   if (!locucionValida) {
     Serial.println("Sin voz detectada, reintentando...");
+    delay(300);
     return;
   }
 
@@ -427,4 +424,5 @@ void loop() {
   } else {
     sesionTerminada = true;
   }
+  delay(200);
 }
