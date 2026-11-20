@@ -43,6 +43,12 @@ public class GeminiKeyPool {
         this.apiKeys = apiKeys == null ? List.of() : List.copyOf(apiKeys);
         this.ttsModels = ttsModels == null ? List.of() : List.copyOf(ttsModels);
         this.llmModel = llmModel;
+        if (this.apiKeys.isEmpty()) {
+            throw new IllegalStateException("Falta GEMINI_API_KEYS: configura al menos una API key de Gemini.");
+        }
+        if (this.ttsModels.isEmpty()) {
+            throw new IllegalStateException("Falta GEMINI_TTS_MODELS: configura al menos un modelo de TTS.");
+        }
         for (int ki = 0; ki < this.apiKeys.size(); ki++) {
             for (int mi = 0; mi < this.ttsModels.size(); mi++) {
                 slots.add(new Slot(ki, mi));

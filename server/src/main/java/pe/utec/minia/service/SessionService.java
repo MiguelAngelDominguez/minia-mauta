@@ -280,7 +280,7 @@ public class SessionService {
             default -> {
                 sesion.setEstado(EstadoSesion.ERROR);
                 codigoError = "RESULTADO_DESCONOCIDO";
-                audio = ttsEngine.sintetizar("No pude entender el resultado. Vamos a intentarlo de nuevo.");
+                audio = sintetizarSeguro("No pude entender el resultado. Vamos a intentarlo de nuevo.");
                 return new RespuestaTurno(audio, feedback, null, false, codigoError, null);
             }
         }
@@ -315,7 +315,7 @@ public class SessionService {
             sesionRepository.save(sesion);
         }
         String mensaje = "La actividad terminó. ¡Buen trabajo!";
-        byte[] audio = ttsEngine.sintetizar(mensaje);
+        byte[] audio = sintetizarSeguro(mensaje);
         Pregunta pregunta = preguntaActual(sesion);
         TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, mensaje, true, null, null);
         return new TurnoResult(meta, audio);
@@ -331,23 +331,37 @@ public class SessionService {
         if (sesion.getFinalizadaEn() != null) {
             String mensaje = "La actividad terminó. ¡Buen trabajo!";
             Pregunta pregunta = preguntaActual(sesion);
-            byte[] audio = ttsEngine.sintetizar(mensaje);
+            byte[] audio = sintetizarSeguro(mensaje);
             TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, mensaje, true, null, null);
             return new TurnoResult(meta, audio);
         }
         Pregunta pregunta = preguntaActual(sesion);
         String mensaje = "Pregunta " + sesion.getPreguntaActual() + ". " + pregunta.getEnunciado();
-        byte[] audio = ttsEngine.sintetizar(mensaje);
+        byte[] audio = sintetizarSeguro(mensaje);
         TurnoMeta meta = meta(sesion, pregunta, Resultado.NINGUNO, null, null, mensaje, false, null, null);
         return new TurnoResult(meta, audio);
     }
 
+    private byte[] sintetizarSeguro(String texto) {
+        try {
+            return ttsEngine.sintetizar(texto);
+        } catch (Exception exception) {
+            log.warn("Fallo al sintetizar audio: {}", exception.getMessage());
+            return audioService.silenceMs(100);
+        }
+    }
+
     private byte[] sintetizarParalelo(String textoA, String textoB, int silenceMs) {
-        CompletableFuture<byte[]> futureA = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoA));
-        CompletableFuture<byte[]> futureB = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoB));
-        byte[] audioA = futureA.join();
-        byte[] audioB = futureB.join();
-        return audioService.concat(audioA, audioService.silenceMs(silenceMs), audioB);
+        try {
+            CompletableFuture<byte[]> futureA = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoA));
+            CompletableFuture<byte[]> futureB = CompletableFuture.supplyAsync(() -> ttsEngine.sintetizar(textoB));
+            byte[] audioA = futureA.join();
+            byte[] audioB = futureB.join();
+            return audioService.concat(audioA, audioService.silenceMs(silenceMs), audioB);
+        } catch (Exception exception) {
+            log.warn("Fallo al sintetizar audio paralelo: {}", exception.getMessage());
+            return audioService.silenceMs(100);
+        }
     }
 
     private String guardarAudio(UUID turnoId, byte[] audio) {
