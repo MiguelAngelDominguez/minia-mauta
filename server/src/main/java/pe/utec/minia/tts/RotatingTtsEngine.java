@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import pe.utec.minia.api.error.ApiException;
 import pe.utec.minia.audio.AudioUtils;
 import pe.utec.minia.config.GeminiKeyPool;
@@ -11,13 +13,18 @@ import pe.utec.minia.config.MiniaProperties;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.List;
 
 public class RotatingTtsEngine implements TtsEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(RotatingTtsEngine.class);
 
     private final MiniaProperties properties;
     private final ObjectMapper mapper;
@@ -44,8 +51,7 @@ public class RotatingTtsEngine implements TtsEngine {
                 break;
             }
             try {
-                byte[] audio = llamarGeminiTts(combo, texto);
-                return audio;
+                return llamarGeminiTts(combo, texto);
             } catch (ApiException exception) {
                 if (exception.getMessage() != null && exception.getMessage().contains("429")) {
                     keyPool.marcarAgotada(combo.keyIndex(), combo.modelIndex());
@@ -53,9 +59,7 @@ public class RotatingTtsEngine implements TtsEngine {
                 }
                 throw exception;
             } catch (Exception exception) {
-                // Si falla por otra razón, intentar la siguiente combinación
                 keyPool.marcarAgotada(combo.keyIndex(), combo.modelIndex());
-                continue;
             }
         }
         throw ApiException.serviceUnavailable("TTS_CUOTA_AGOTADA",
@@ -65,17 +69,14 @@ public class RotatingTtsEngine implements TtsEngine {
     private byte[] llamarGeminiTts(GeminiKeyPool.Combinacion combo, String texto) {
         try {
             ObjectNode body = mapper.createObjectNode();
-            ObjectNode systemInstruction = mapper.createObjectNode();
-            ArrayNode systemParts = systemInstruction.putArray("parts");
-            systemParts.addObject().put("text",
-                    "Eres una voz amable, clara y pausada que lee en español. " +
-                            "Lee únicamente el texto que se te proporcione, sin añadir instrucciones ni comentarios.");
-            body.set("systemInstruction", systemInstruction);
 
+            // Los modelos TTS de Gemini no aceptan systemInstruction: la instrucción va en el prompt
             ArrayNode contents = body.putArray("contents");
             ObjectNode content = contents.addObject();
+            content.put("role", "user");
             ArrayNode parts = content.putArray("parts");
-            parts.addObject().put("text", "\"" + texto + "\"");
+            parts.addObject().put("text",
+                    "Lee en español con una voz amable, clara y pausada, sin añadir comentarios ni palabras extra:\n" + texto);
 
             ObjectNode generationConfig = body.putObject("generationConfig");
             generationConfig.putArray("responseModalities").add("AUDIO");
@@ -84,23 +85,38 @@ public class RotatingTtsEngine implements TtsEngine {
             voiceConfig.putObject("prebuiltVoiceConfig")
                     .put("voiceName", properties.tts().gemini().voice());
 
-            String url = "https://generativelanguage.googleapis.com/v1beta/models/"
-                    + combo.model() + ":generateContent";
+            String payload = mapper.writeValueAsString(body);
+            String model = combo.model().contains("3.8") ? "gemini-2.5-flash-preview-tts" : combo.model();
 
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(properties.tts().gemini().timeoutSeconds()))
-                    .header("Content-Type", "application/json")
-                    .header("x-goog-api-key", combo.apiKey())
-                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
-                    .build();
+            List<String> urls = List.of(
+                    "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+                    "https://aiplatform.googleapis.com/v1/publishers/google/models/" + model + ":generateContent?key="
+                            + URLEncoder.encode(combo.apiKey(), StandardCharsets.UTF_8)
+            );
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() == 429) {
-                throw ApiException.serviceUnavailable("GEMINI_TTS_429", "429");
+            HttpResponse<String> response = null;
+            for (String url : urls) {
+                HttpRequest.Builder reqBuilder = HttpRequest.newBuilder(URI.create(url))
+                        .timeout(Duration.ofSeconds(properties.tts().gemini().timeoutSeconds()))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(payload));
+                if (!url.contains("?key=")) {
+                    reqBuilder.header("x-goog-api-key", combo.apiKey());
+                }
+                response = httpClient.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() == 200) {
+                    break;
+                }
+                log.warn("TTS fallo en {} -> HTTP {}: {}", url.split("\\?")[0], response.statusCode(), response.body());
             }
-            if (response.statusCode() != 200) {
+
+            if (response == null || response.statusCode() != 200) {
+                int code = response == null ? 500 : response.statusCode();
+                if (code == 429) {
+                    throw ApiException.serviceUnavailable("GEMINI_TTS_429", "429");
+                }
                 throw ApiException.serviceUnavailable("GEMINI_TTS_ERROR",
-                        "Gemini TTS respondió con estado " + response.statusCode() + ".");
+                        "Gemini TTS respondió con estado " + code + ".");
             }
 
             byte[] audio = extractAudio(mapper.readTree(response.body()));
