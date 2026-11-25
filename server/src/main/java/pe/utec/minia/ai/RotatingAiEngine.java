@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public class RotatingAiEngine implements AiEngine {
@@ -44,6 +45,11 @@ public class RotatingAiEngine implements AiEngine {
 
     @Override
     public Evaluacion evaluar(EvaluacionRequest request) {
+        int audioBytes = request.audioPcm() == null ? 0 : request.audioPcm().length;
+        double duracionSeg = audioBytes / (2.0 * Math.max(1, request.rate()));
+        log.info(">>> [AUDIO RECIBIDO EN SERVIDOR] {} bytes ({} s) | rate={} Hz | intento={}",
+                audioBytes, String.format(Locale.ROOT, "%.2f", duracionSeg), request.rate(), request.intento());
+
         int intentos = keyPool.totalCombinaciones();
         if (intentos == 0) {
             throw ApiException.serviceUnavailable("AI_SIN_KEYS", "No hay API keys configuradas para IA.");
@@ -96,6 +102,7 @@ public class RotatingAiEngine implements AiEngine {
                         }
                         if (response.statusCode() == 200) {
                             String text = extractText(mapper.readTree(response.body()));
+                            log.info(">>> [EVALUACION GEMINI] {}", text);
                             return parseEvaluacion(text);
                         }
                         log.warn("Eval fallo en {} ({}) -> HTTP {}: {}",
