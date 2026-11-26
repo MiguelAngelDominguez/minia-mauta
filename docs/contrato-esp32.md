@@ -40,6 +40,12 @@ El cuerpo del `POST /turno` es PCM puro. No enviar cabecera WAV ni metadatos.
 Content-Type: audio/L16;rate=16000;channels=1
 ```
 
+El cuerpo puede enviarse con `Content-Length` o con `Transfer-Encoding: chunked`.
+En el segundo caso, el framing de chunks pertenece a HTTP: el servidor lo retira
+y recibe el PCM concatenado. Los límites entre chunks no tienen que coincidir con
+los límites entre muestras. El servidor comienza la evaluación cuando termina de
+recibir el turno completo (incluido el chunk final `0`).
+
 El servidor responde siempre con PCM16LE del mismo formato. Para escucharlo en
 una PC, envolverlo en WAV (el simulador lo hace automáticamente).
 
@@ -255,6 +261,7 @@ llegó a evaluarse:
 | `AUDIO_INVALIDO` | 400 | Número impar de bytes. |
 | `AUDIO_MUY_CORTO` | 400 | Menos de 300 ms. |
 | `AUDIO_DEMASIADO_LARGO` | 400 | Más de 30 s / 960 KB. |
+| `AUDIO_LECTURA_FALLIDA` | 400 | No se pudo leer completo el cuerpo de la petición. |
 
 El firmware debe tratar estos 400 como “repetir la grabación”, no como cierre
 de sesión.

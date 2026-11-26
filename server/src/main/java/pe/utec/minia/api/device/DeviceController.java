@@ -1,6 +1,7 @@
 package pe.utec.minia.api.device;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -19,6 +20,7 @@ import pe.utec.minia.api.error.ApiException;
 import pe.utec.minia.config.MiniaProperties;
 import pe.utec.minia.domain.EstadoSesion;
 import pe.utec.minia.domain.Resultado;
+import pe.utec.minia.service.AudioService;
 import pe.utec.minia.service.SessionService;
 import pe.utec.minia.service.TurnoResult;
 
@@ -38,11 +40,18 @@ public class DeviceController {
     private final SessionService sessionService;
     private final MiniaProperties properties;
     private final ObjectMapper mapper;
+    private final AudioService audioService;
 
-    public DeviceController(SessionService sessionService, MiniaProperties properties, ObjectMapper mapper) {
+    public DeviceController(
+            SessionService sessionService,
+            MiniaProperties properties,
+            ObjectMapper mapper,
+            AudioService audioService
+    ) {
         this.sessionService = sessionService;
         this.properties = properties;
         this.mapper = mapper;
+        this.audioService = audioService;
     }
 
     @GetMapping("/contrato")
@@ -79,12 +88,14 @@ public class DeviceController {
         contrato.put("estados", List.of(EstadoSesion.values()));
         contrato.put("resultados", List.of(Resultado.values()));
         contrato.put("erroresRecuperables", List.of(
-                "AUDIO_VACIO", "AUDIO_INVALIDO", "AUDIO_MUY_CORTO", "AUDIO_DEMASIADO_LARGO", "IA_NO_DISPONIBLE", "RESULTADO_DESCONOCIDO"
+                "AUDIO_VACIO", "AUDIO_INVALIDO", "AUDIO_MUY_CORTO", "AUDIO_DEMASIADO_LARGO",
+                "AUDIO_LECTURA_FALLIDA", "IA_NO_DISPONIBLE", "RESULTADO_DESCONOCIDO"
         ));
         contrato.put("notas", List.of(
                 "Los errores recuperables durante un turno devuelven HTTP 200, estado ERROR y audio para reintentar.",
                 "Los errores de autenticación o de sesión devuelven un JSON con codigo y mensaje.",
-                "Usa X-Turno como UUID idempotente; el servidor recuerda la respuesta por 10 minutos."
+                "Usa X-Turno como UUID idempotente; el servidor recuerda la respuesta por 10 minutos.",
+                "El endpoint de turno acepta Content-Length o Transfer-Encoding: chunked y evalúa al terminar de recibir el audio."
         ));
         return contrato;
     }
@@ -113,13 +124,19 @@ public class DeviceController {
             @RequestHeader(value = "X-Device-Id", required = false) String deviceHeader,
             @RequestHeader(value = "X-Turno", required = false) String turnHeader,
             @PathVariable UUID id,
-            @RequestBody(required = false) byte[] audio
+            HttpServletRequest request
     ) {
         checkToken(token);
         String deviceId = requireDevice(deviceHeader);
         UUID turnId = parseUuid(turnHeader);
         if (turnId == null) {
             turnId = UUID.randomUUID();
+        }
+        byte[] audio;
+        try {
+            audio = audioService.readPcm16(request.getInputStream());
+        } catch (IOException exception) {
+            throw ApiException.badRequest("AUDIO_LECTURA_FALLIDA", "No se pudo leer el cuerpo de audio completo.");
         }
         TurnoResult result = sessionService.responder(
                 id, deviceId, turnId, audio);
