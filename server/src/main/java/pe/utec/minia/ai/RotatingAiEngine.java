@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import pe.utec.minia.api.error.ApiException;
 import pe.utec.minia.audio.AudioUtils;
 import pe.utec.minia.config.GeminiKeyPool;
@@ -12,14 +14,22 @@ import pe.utec.minia.domain.Resultado;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 public class RotatingAiEngine implements AiEngine {
+
+    private static final Logger log = LoggerFactory.getLogger(RotatingAiEngine.class);
 
     private final MiniaProperties properties;
     private final ObjectMapper mapper;
@@ -35,11 +45,23 @@ public class RotatingAiEngine implements AiEngine {
 
     @Override
     public Evaluacion evaluar(EvaluacionRequest request) {
-        String model = keyPool.llmModel();
+        int audioBytes = request.audioPcm() == null ? 0 : request.audioPcm().length;
+        double duracionSeg = audioBytes / (2.0 * Math.max(1, request.rate()));
+        log.info(">>> [AUDIO RECIBIDO EN SERVIDOR] {} bytes ({} s) | rate={} Hz | intento={}",
+                audioBytes, String.format(Locale.ROOT, "%.2f", duracionSeg), request.rate(), request.intento());
+
         int intentos = keyPool.totalCombinaciones();
         if (intentos == 0) {
             throw ApiException.serviceUnavailable("AI_SIN_KEYS", "No hay API keys configuradas para IA.");
         }
+
+        Set<String> modelosCandidatos = new LinkedHashSet<>();
+        String configurado = keyPool.llmModel();
+        if (configurado != null && !configurado.isBlank() && !configurado.contains("3.5")) {
+            modelosCandidatos.add(configurado.trim());
+        }
+        modelosCandidatos.add("gemini-2.5-flash");
+        modelosCandidatos.add("gemini-2.0-flash");
 
         for (int i = 0; i < Math.max(1, intentos); i++) {
             GeminiKeyPool.Combinacion combo = keyPool.siguienteDisponible();
@@ -61,28 +83,40 @@ public class RotatingAiEngine implements AiEngine {
                 generationConfig.put("responseMimeType", "application/json");
                 generationConfig.set("responseSchema", responseSchema());
 
-                String url = "https://generativelanguage.googleapis.com/v1beta/models/"
-                        + model + ":generateContent";
                 String payload = mapper.writeValueAsString(body);
+                HttpResponse<String> response = null;
 
-                HttpResponse<String> response = enviar(url, apiKey, payload);
-                int reintentos = 0;
-                while (response.statusCode() == 503 && reintentos < 2) {
-                    Thread.sleep(700L * (reintentos + 1));
-                    response = enviar(url, apiKey, payload);
-                    reintentos++;
+                for (String model : modelosCandidatos) {
+                    List<String> urls = new ArrayList<>();
+                    urls.add("https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent");
+                    urls.add("https://aiplatform.googleapis.com/v1/publishers/google/models/" + model
+                            + ":generateContent?key=" + URLEncoder.encode(apiKey, StandardCharsets.UTF_8));
+
+                    for (String url : urls) {
+                        response = enviar(url, apiKey, payload);
+                        int reintentos = 0;
+                        while (response.statusCode() == 503 && reintentos < 2) {
+                            Thread.sleep(700L * (reintentos + 1));
+                            response = enviar(url, apiKey, payload);
+                            reintentos++;
+                        }
+                        if (response.statusCode() == 200) {
+                            String text = extractText(mapper.readTree(response.body()));
+                            log.info(">>> [EVALUACION GEMINI] {}", text);
+                            return parseEvaluacion(text);
+                        }
+                        log.warn("Eval fallo en {} ({}) -> HTTP {}: {}",
+                                model, url.split("\\?")[0], response.statusCode(), response.body());
+                    }
                 }
-                if (response.statusCode() == 429) {
+
+                int code = response == null ? 500 : response.statusCode();
+                if (code == 429) {
                     keyPool.marcarAgotada(combo.keyIndex(), combo.modelIndex());
                     continue;
                 }
-                if (response.statusCode() != 200) {
-                    throw ApiException.serviceUnavailable("GEMINI_ERROR",
-                            "Gemini respondió con estado " + response.statusCode() + ".");
-                }
-
-                String text = extractText(mapper.readTree(response.body()));
-                return parseEvaluacion(text);
+                throw ApiException.serviceUnavailable("GEMINI_ERROR",
+                        "Gemini respondió con estado " + code + ".");
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 throw ApiException.serviceUnavailable("GEMINI_INTERRUMPIDO", "La evaluación fue interrumpida.");
@@ -102,13 +136,14 @@ public class RotatingAiEngine implements AiEngine {
 
     private HttpResponse<String> enviar(String url, String apiKey, String payload)
             throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(properties.ai().gemini().timeoutSeconds()))
                 .header("Content-Type", "application/json")
-                .header("x-goog-api-key", apiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(payload))
-                .build();
-        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                .POST(HttpRequest.BodyPublishers.ofString(payload));
+        if (!url.contains("?key=")) {
+            builder.header("x-goog-api-key", apiKey);
+        }
+        return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private ObjectNode systemInstruction() {
